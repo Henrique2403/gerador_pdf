@@ -6,73 +6,133 @@ from datetime import datetime
 API_URL = "https://exemplo.com/api/dados"
 
 # Realiza a requisição GET
-response = requests.get(API_URL)
+response = requests.get(url, headers=headers)
 
 # Verifica se a requisição foi bem-sucedida
 if response.status_code == 200:
-    data = response.json()
+    dados = response.json()
 else:
     print("Erro ao buscar os dados:", response.status_code)
     exit()
 
 
-# Criando o PDF
-pdf = FPDF()
-pdf.set_auto_page_break(auto=True, margin=15)
-pdf.add_page()
-pdf.set_font("Arial", "", 12)
+# Geração do layout em pdf
+start_time = time.time()
 
-# Título do documento
-pdf.set_font("Arial", "B", 16)
-pdf.cell(200, 10, "COMMERCIAL INVOICE", ln=True, align="C")
-pdf.ln(5)
+now = datetime.now()
 
-# Informações principais
-pdf.set_font("Arial", "B", 12)
-pdf.cell(100, 8, "Empresa XYZ", ln=True)
-pdf.set_font("Arial", "", 12)
-pdf.cell(100, 8, f"Protocolo: {data.get('protocolo', 'N/A')}", ln=True)
-pdf.cell(100, 8, f"Data Abertura: {datetime.strptime(data.get('dataAbertura', '2025-03-14T19:00:20.906Z'), '%Y-%m-%dT%H:%M:%S.%fZ').strftime('%d/%m/%Y')}", ln=True)
-pdf.cell(100, 8, f"Email: {data.get('email', 'N/A')}", ln=True)
-pdf.cell(100, 8, f"Nome: {data.get('nome', 'N/A')}", ln=True)
-pdf.cell(100, 8, f"Telefone: ({data.get('numeroDDD1', 'N/A')}) {data.get('numeroTelefone1', 'N/A')}", ln=True)
-pdf.ln(10)
+diretorio_saida = f"relatorios_{now.strftime('%Y%m%d')}"
+arquivo_log = f"{diretorio_saida}/log_execucao.txt"
+    
+if not os.path.isdir(diretorio_saida):
+    os.mkdir(diretorio_saida)    
 
-# Tabela com os detalhes do atendimento
-pdf.set_font("Arial", "B", 12)
-pdf.cell(190, 8, "Detalhes do Atendimento", ln=True, align="C")
-pdf.ln(5)
+logfile = open(arquivo_log, "a", encoding='utf-8')
 
-pdf.set_font("Arial", "B", 10)
-pdf.cell(50, 8, "Campo", 1)
-pdf.cell(140, 8, "Detalhe", 1, ln=True)
-
-pdf.set_font("Arial", "", 10)
-campos = [
-    ("Status Atendimento", data.get("statusAtendimento", "N/A")),
-    ("Data Resolucao", datetime.strptime(data.get("dataResolucao", "2025-03-14T19:00:20.906Z"), "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%d/%m/%Y")),
-    ("Código Fechamento", data.get("codigoFechamento", "N/A")),
-    ("Descrição Produto", data.get("descricaoProduto", "N/A")),
-    ("Observação Abertura", data.get("observacaoAbertura", "N/A")),
-    ("Observação Fechamento", data.get("observacaoFechamento", "N/A")),
-]
-
-for campo, valor in campos:
-    pdf.cell(50, 8, campo, 1)
-    pdf.cell(140, 8, str(valor), 1, ln=True)
-
-pdf.ln(10)
+def parse_date(date_str):
+    try:
+        # Tenta converter a data com milissegundos
+        return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%f")
+    except ValueError:
+        # Se falhar, converte sem milissegundos
+        return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
 
 
-# Criar a pasta 'gerador_pdf' se não existir
-output_dir = f"relatorio{datetime.now().strftime("%Y-%m-%d")}"
-os.makedirs(output_dir, exist_ok=True)
+def gera_arquivo_pdf(dados, diretorio_saida):
 
-# Criar guid para nomear arquivo pdf
-guid = uuid.uuid4()
+    # Verifica se 'dados' é uma lista
+    if isinstance(dados, list):
 
-# Caminho do PDF corrigido
-pdf_path = os.path.join(output_dir, f"{guid}{datetime.now().strftime("%Y-%m-%d")}.pdf")
-pdf.output(pdf_path)
+        TABLE_DATA = [
+            ("Nr. Atendimento", 
+            "Nr. Protocolo", 
+            "Nr. Ouvidoria", 
+            "Área Atendimento",
+            "Observação Abertura",
+            "Descr. Atendimento", 
+            "Filial", 
+            "Usuario", 
+            "Data Abertura", 
+            "Data Fechamento", 
+            "Data Ouvidoria")
+    ]
+        
+    for item in dados:
+        dataAbertura = parse_date(item.get('dataAbertura', 'N/A'))
+        dataResolucao = parse_date(item.get('dataResolucao', 'N/A'))
+        dataOuvidoria = parse_date(item.get('dataOuvidoria', 'N/A'))
+        formattedDataAbertura = dataAbertura.strftime("%d/%m/%Y %H:%M:%S")
+        formattedDataResolucao = ("" if item.get('statusAtendimento') == 1 | 0 else dataResolucao.strftime("%d/%m/%Y %H:%M:%S"))
+        formattedDataOuvidoria = ("" if dataOuvidoria.year == 1 or item.get('statusAtendimento') == 1 | 0 else dataOuvidoria.strftime("%d/%m/%Y %H:%M:%S"))
+        cpf = item.get('cpf', 'N/A')
 
-print(f"PDF gerado com sucesso: {pdf_path}")
+        if(item.get('codigoFilial') == 1):
+            filial = "MATRIZ"
+        elif(item.get('codigoFilial') == 673):
+            filial = "CALL CENTER - ATENTO"
+        else:
+            filial = ""
+
+        TABLE_DATA.append((
+            f"{str(item.get('numeroAtendimento', 'N/A'))}", 
+            f"{str(item.get('protocolo', 'N/A'))}", 
+            f"{str(item.get('numeroAtendimento', 'N/A'))}", 
+            f"{str(item.get('descricaoArea', 'N/A'))}",
+            f"{str(item.get('observacaoAbertura', 'N/A'))}",
+            f"{str(item.get('descricaoFila', 'N/A'))}",
+            f"{filial}",
+            f"{str(item.get('nome', 'N/A'))}",
+            f"{formattedDataAbertura}",
+            f"{formattedDataResolucao}",
+            f"{formattedDataOuvidoria}"
+        ))
+
+    # Criando o PDF
+    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("helvetica", "", 12)
+    pdf.image('logo_pan_spa.png', x=10, y=10, w=pdf.w - 20)
+    pdf.ln(25)
+
+    # Titulo do documento
+    pdf.set_font("helvetica", "B", 16)
+    pdf.cell(270, 10, f"CHAMADOS - CPF: {str(cpf)}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.ln(5)
+    pdf.set_font("helvetica", "", 10)
+    pdf.set_font("helvetica", "", size=7)
+
+    # Cria a tabela com os headers e columns
+    with pdf.table(width=277.0000833333333, col_widths=(35, 30, 30, 50, 140, 50, 35, 35, 30, 30, 30)) as table:
+        for data_row in TABLE_DATA:
+            row = table.row()
+            for datum in data_row:
+                row.cell(datum)
+    
+    caminho_pdf = os.path.join(diretorio_saida, f"relatorio_chamados_{cpf}-{datetime.now().strftime('%d%m%Y')}.pdf")
+    pdf.output(caminho_pdf)
+
+
+try:
+
+    logfile.write(f"INICIO \n")
+    logfile.write(f"Diretório de saída criado: {diretorio_saida} \n")
+    logfile.write(f"Inicio leitura do dados de entrada: {response.json()} \n")
+
+    retorno = gera_arquivo_pdf(dados, diretorio_saida)
+
+    if retorno == "":
+        logfile.write(f"arquivo: {retorno} gerado com sucesso. \n")
+    else:
+        logfile.write(f"{retorno} \n")
+
+    end_time = time.time()
+    execution_time = end_time - start_time
+    logfile.write(f"Tempo de execução: {execution_time:.2f} segundos \n")
+    logfile.write(f"TERMINO \n\n")
+    logfile.close()
+
+except Exception as e:
+    print("Erro: ", str(e))
+    logfile.write(f"Erro: {str(e)}\n")
+ 
