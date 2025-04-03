@@ -1,12 +1,12 @@
 import os, uuid, requests
-from fpdf import FPDF
+from fpdf import FPDF, XPos, YPos
 from datetime import datetime
 
 # URL da API externa (substitua pela API real)
 API_URL = "https://exemplo.com/api/dados"
 
 # Realiza a requisição GET
-response = requests.get(url, headers=headers)
+response = requests.get(API_URL)
 
 # Verifica se a requisição foi bem-sucedida
 if response.status_code == 200:
@@ -15,9 +15,8 @@ else:
     print("Erro ao buscar os dados:", response.status_code)
     exit()
 
-
 # Geração do layout em pdf
-start_time = time.time()
+start_time = datetime.time()
 
 now = datetime.now()
 
@@ -40,6 +39,7 @@ def parse_date(date_str):
 
 def gera_arquivo_pdf(dados, diretorio_saida):
 
+
     # Verifica se 'dados' é uma lista
     if isinstance(dados, list):
 
@@ -57,6 +57,9 @@ def gera_arquivo_pdf(dados, diretorio_saida):
             "Data Ouvidoria")
     ]
         
+    def truncate_text(text, max_length=300):
+        return text[:max_length] + "..." if len(text) > max_length else text
+        
     for item in dados:
         dataAbertura = parse_date(item.get('dataAbertura', 'N/A'))
         dataResolucao = parse_date(item.get('dataResolucao', 'N/A'))
@@ -73,12 +76,14 @@ def gera_arquivo_pdf(dados, diretorio_saida):
         else:
             filial = ""
 
+        obs_abertura = truncate_text(item.get('observacaoAbertura', 'N/A'), 300)
+
         TABLE_DATA.append((
             f"{str(item.get('numeroAtendimento', 'N/A'))}", 
             f"{str(item.get('protocolo', 'N/A'))}", 
             f"{str(item.get('numeroAtendimento', 'N/A'))}", 
             f"{str(item.get('descricaoArea', 'N/A'))}",
-            f"{str(item.get('observacaoAbertura', 'N/A'))}",
+            f"{str(obs_abertura)}",
             f"{str(item.get('descricaoFila', 'N/A'))}",
             f"{filial}",
             f"{str(item.get('nome', 'N/A'))}",
@@ -90,24 +95,25 @@ def gera_arquivo_pdf(dados, diretorio_saida):
     # Criando o PDF
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_font("DejaVu", "", "DejaVuSans.ttf", uni=True)
     pdf.add_page()
-    pdf.set_font("helvetica", "", 12)
+    pdf.set_font("DejaVu", "", 10)
     pdf.image('logo_pan_spa.png', x=10, y=10, w=pdf.w - 20)
     pdf.ln(25)
 
     # Titulo do documento
-    pdf.set_font("helvetica", "B", 16)
+    pdf.set_font("DejaVu", "B", 16)
     pdf.cell(270, 10, f"CHAMADOS - CPF: {str(cpf)}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.ln(5)
-    pdf.set_font("helvetica", "", 10)
-    pdf.set_font("helvetica", "", size=7)
+    pdf.set_font("DejaVu", "", 10)
+    pdf.set_font("DejaVu", "", size=7)
 
     # Cria a tabela com os headers e columns
     with pdf.table(width=277.0000833333333, col_widths=(35, 30, 30, 50, 140, 50, 35, 35, 30, 30, 30)) as table:
         for data_row in TABLE_DATA:
             row = table.row()
-            for datum in data_row:
-                row.cell(datum)
+            for datum in enumerate(data_row):
+                row.cell(datum, multiline=True)
     
     caminho_pdf = os.path.join(diretorio_saida, f"relatorio_chamados_{cpf}-{datetime.now().strftime('%d%m%Y')}.pdf")
     pdf.output(caminho_pdf)
@@ -126,7 +132,7 @@ try:
     else:
         logfile.write(f"{retorno} \n")
 
-    end_time = time.time()
+    end_time = datetime.time()
     execution_time = end_time - start_time
     logfile.write(f"Tempo de execução: {execution_time:.2f} segundos \n")
     logfile.write(f"TERMINO \n\n")
